@@ -11,7 +11,7 @@ from flask_cors import CORS
 from flask_talisman import Talisman
 
 app = Flask(__name__)
-CORS(app, resources={r"/api/*": {"origins": ["https://your-vercel-domain.vercel.app", "http://localhost:5173"]}})
+CORS(app, resources={r"/api/*": {"origins": ["https://sam-front-sigma.vercel.app/", "https://sam-front-git-main-1024masis-projects.vercel.app/", "https://sam-front-1024masis-projects.vercel.app/", "http://localhost:5173"]}})
 Talisman(app)  # Add security headers
 
 class PredictionSchema(Schema):
@@ -26,6 +26,10 @@ class PredictionSchema(Schema):
 
 schema = PredictionSchema()
 
+# Define the port and host
+host = '0.0.0.0'  # Flask needs to listen on all interfaces
+port = int(os.environ.get('PORT', 5000))  # Render will provide the port
+
 
 # Load both the model and scaler when the server starts
 scaler_path = os.getenv('SCALER_PATH', './scaler.pkl')
@@ -37,6 +41,11 @@ model = joblib.load(model_path)
 
 # Column names in the correct order for the scaler
 FEATURE_COLUMNS = ['Anello', 'A2', 'P2', 'Ratio', 'SIVC', 'Angolo', 'IVS', 'EDD']
+
+@app.route('/')
+def home():
+    return "Hello, Flask on Render!"
+
 
 @app.route('/api/predict', methods=['POST'])
 def predict():
