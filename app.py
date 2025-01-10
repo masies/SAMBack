@@ -11,7 +11,7 @@ from flask_cors import CORS
 from flask_talisman import Talisman
 
 app = Flask(__name__)
-CORS(app)  # Configure CORS
+CORS(app, resources={r"/api/*": {"origins": ["https://your-vercel-domain.vercel.app", "http://localhost:5173"]}})
 Talisman(app)  # Add security headers
 
 class PredictionSchema(Schema):
@@ -75,6 +75,9 @@ def predict():
 def handle_exception(e):
     return jsonify({'error': 'An internal server error occurred'}), 500
 
+@app.route('/api/status', methods=['GET'])
+def status():
+    return  "alive"
 
 if __name__ == '__main__':
     app.run(debug=True)
