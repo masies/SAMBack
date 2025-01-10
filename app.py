@@ -9,7 +9,15 @@ from flask import Flask
 from flask_talisman import Talisman
 
 app = Flask(__name__)
-CORS(app, resources={r"/api/*": {"origins": ["https://sam-front-sigma.vercel.app/", "https://sam-front-git-main-1024masis-projects.vercel.app/", "https://sam-front-1024masis-projects.vercel.app/", "http://localhost:5173"]}})
+
+CORS(app, resources={r"/api/*": {"origins": [
+    "https://sam-front-sigma.vercel.app/", 
+    "https://sam-front-git-main-1024masis-projects.vercel.app/", 
+    "https://sam-front-1024masis-projects.vercel.app/", 
+    "http://localhost:5173",  # For local dev
+]}})
+
+
 Talisman(app)  # Add security headers
 
 class PredictionSchema(Schema):
