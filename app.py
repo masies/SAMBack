@@ -10,9 +10,9 @@ app = FastAPI()
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
-        "https://sam-front-sigma.vercel.app/",
-        "https://sam-front-git-main-1024masis-projects.vercel.app/",
-        "https://sam-front-1024masis-projects.vercel.app/", 
+        "https://sam-front-sigma.vercel.app",
+        "https://sam-front-git-main-1024masis-projects.vercel.app",
+        "https://sam-front-1024masis-projects.vercel.app", 
         "http://localhost:5173",  # For local dev
     ],
     allow_credentials=True,
