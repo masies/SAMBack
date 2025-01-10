@@ -28,11 +28,17 @@ schema = PredictionSchema()
 
 
 # Load both the model and scaler when the server starts
-model_path = os.getenv('MODEL_PATH', './model.pkl')
+model_url = "https://drive.google.com/uc?id=1ayzn2J0y6Yq8QgvIBNceA5E7Af7LEGvP&export=download"
 scaler_path = os.getenv('SCALER_PATH', './scaler.pkl')
 
-model = joblib.load(model_path)
 scaler = joblib.load(scaler_path)
+
+# get the model from google drive link
+import gdown
+model_path = './model.pkl'
+gdown.download(model_url, model_path, quiet=False)
+model = joblib.load(model_path)
+
 
 # Column names in the correct order for the scaler
 FEATURE_COLUMNS = ['Anello', 'A2', 'P2', 'Ratio', 'SIVC', 'Angolo', 'IVS', 'EDD']
