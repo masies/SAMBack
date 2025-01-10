@@ -1,4 +1,3 @@
-# app.py
 from flask import Flask, request, jsonify
 import joblib
 import numpy as np
@@ -7,7 +6,6 @@ from flask_cors import CORS
 import os
 from marshmallow import Schema, fields, ValidationError
 from flask import Flask
-from flask_cors import CORS
 from flask_talisman import Talisman
 
 app = Flask(__name__)
@@ -26,11 +24,6 @@ class PredictionSchema(Schema):
 
 schema = PredictionSchema()
 
-# Define the port and host
-host = '0.0.0.0'  # Flask needs to listen on all interfaces
-port = int(os.environ.get('PORT', 5000))  # Render will provide the port
-
-
 # Load both the model and scaler when the server starts
 scaler_path = os.getenv('SCALER_PATH', './scaler.pkl')
 model_path = os.getenv('MODEL_PATH', './model.pkl')
@@ -38,14 +31,12 @@ model_path = os.getenv('MODEL_PATH', './model.pkl')
 scaler = joblib.load(scaler_path)
 model = joblib.load(model_path)
 
-
 # Column names in the correct order for the scaler
 FEATURE_COLUMNS = ['Anello', 'A2', 'P2', 'Ratio', 'SIVC', 'Angolo', 'IVS', 'EDD']
 
 @app.route('/')
 def home():
     return "Hello, Flask on Render!"
-
 
 @app.route('/api/predict', methods=['POST'])
 def predict():
@@ -89,5 +80,8 @@ def handle_exception(e):
 def status():
     return  "alive"
 
+# Update this to bind Flask to '0.0.0.0' and the 'PORT' environment variable
 if __name__ == '__main__':
-    app.run(debug=True)
+    host = '0.0.0.0'  # Bind to all interfaces
+    port = int(os.environ.get('PORT', 5000))  # Use the dynamic port from Render
+    app.run(host=host, port=port, debug=True)
