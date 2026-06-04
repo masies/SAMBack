@@ -52,7 +52,7 @@ async def predict(data: dict):
             ratio = lunghezza_a2 / lunghezza_p2
 
         feature_values = {
-            "Anello": _read_float(data, "dim_anello", "Anello"),
+            "Anello": _read_float(data, "Pre_EF", "dim_anello", "Anello"),
             "A2": lunghezza_a2,
             "P2": lunghezza_p2,
             "Ratio": float(ratio),
