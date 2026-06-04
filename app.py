@@ -1,4 +1,4 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 import joblib
 import pandas as pd
@@ -20,41 +20,67 @@ app.add_middleware(
     allow_headers=["*"],  # Allow all headers
 )
 
-# Load model and scaler
-scaler_path = os.getenv('SCALER_PATH', './scaler.pkl')
-model_path = os.getenv('MODEL_PATH', './model.pkl')
+# Load model and scaler. Keep default paths relative to this file so the app
+# works whether it is started from SAMBack or from the repository root.
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+scaler_path = os.getenv("SCALER_PATH", os.path.join(BASE_DIR, "scaler.pkl"))
+model_path = os.getenv("MODEL_PATH", os.path.join(BASE_DIR, "model.pkl"))
 
 scaler = joblib.load(scaler_path)
 model = joblib.load(model_path)
 
-# Column names for the features
-FEATURE_COLUMNS = ['Anello', 'A2', 'P2', 'Ratio', 'SIVC', 'Angolo', 'IVS', 'EDD']
+# The current scaler was trained with six columns. If a future scaler carries
+# feature_names_in_, trust that metadata and keep the request mapping stable.
+DEFAULT_FEATURE_COLUMNS = ["Anello", "Ratio", "SIVC", "Angolo", "IVS", "EDD"]
+FEATURE_COLUMNS = list(getattr(scaler, "feature_names_in_", DEFAULT_FEATURE_COLUMNS))
+
+
+def _read_float(data: dict, *keys: str) -> float:
+    for key in keys:
+        value = data.get(key)
+        if value not in (None, ""):
+            return float(value)
+    raise KeyError(keys[0])
 
 @app.post("/api/predict")
 async def predict(data: dict):
     try:
-        # Prepare the input data in the correct format
-        input_data = pd.DataFrame({
-            'Anello': [float(data['dim_anello'])],
-            'A2': [float(data['lunghezza_a2'])],
-            'P2': [float(data['lunghezza_p2'])],
-            'Ratio': [float(data['rapporto_lam_lpm'])],
-            'SIVC': [float(data['distanza_siv_coapt'])],
-            'Angolo': [float(data['angolo_ma'])],
-            'IVS': [float(data['setto_basale'])],
-            'EDD': [float(data['lv_edd'])]
-        })[FEATURE_COLUMNS]  # Ensure correct column order
+        lunghezza_a2 = _read_float(data, "lunghezza_a2", "A2_mm")
+        lunghezza_p2 = _read_float(data, "lunghezza_p2", "P2_mm")
+        ratio = data.get("rapporto_lam_lpm") or data.get("ratio_lam_lpm")
+        if ratio in (None, ""):
+            ratio = lunghezza_a2 / lunghezza_p2
 
-        # Scale the features
+        feature_values = {
+            "Anello": _read_float(data, "dim_anello", "Anello"),
+            "A2": lunghezza_a2,
+            "P2": lunghezza_p2,
+            "Ratio": float(ratio),
+            "SIVC": _read_float(data, "distanza_siv_coapt", "SIV-Coapt_mm"),
+            "Angolo": _read_float(data, "angolo_ma", "Angolo"),
+            "IVS": _read_float(data, "setto_basale", "IVS"),
+            "EDD": _read_float(data, "lv_edd", "EDD"),
+        }
+
+        input_data = pd.DataFrame(
+            [{column: feature_values[column] for column in FEATURE_COLUMNS}]
+        )
+
         scaled_features = scaler.transform(input_data)
 
-        # Make prediction
         prediction = model.predict_proba(scaled_features)[0][1] * 100
 
         return {"prediction": prediction, "scaled_features": scaled_features.tolist()[0]}
+    except KeyError as e:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Missing required field: {e.args[0]}",
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=f"Invalid numeric value: {e}")
     except Exception as e:
-        return {"error": str(e), "message": "Error processing prediction"}
+        raise HTTPException(status_code=500, detail=f"Error processing prediction: {e}")
 
 @app.get("/api/status")
 async def status():
-    return "alive"
+    return {"status": "alive"}
