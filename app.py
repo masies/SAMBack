@@ -1,9 +1,8 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-import joblib
+import cloudpickle
 import math
 import os
-import pandas as pd
 
 
 app = FastAPI()
@@ -23,32 +22,29 @@ app.add_middleware(
 )
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-SAM_PIPELINE_PATH = os.getenv(
-    "SAM_PIPELINE_PATH",
-    os.path.join(BASE_DIR, "sam_predictor", "sam_pipeline.joblib"),
+SAM_PREDICTOR_PATH = os.getenv(
+    "SAM_PREDICTOR_PATH",
+    os.path.join(BASE_DIR, "sam_predictor", "sam_predictor.pkl"),
 )
-RING_PIPELINE_PATH = os.getenv(
-    "RING_PIPELINE_PATH",
-    os.path.join(BASE_DIR, "ring_predictor", "ring_pipeline.joblib"),
+RING_PREDICTOR_PATH = os.getenv(
+    "RING_PREDICTOR_PATH",
+    os.path.join(BASE_DIR, "ring_predictor", "ring_predictor.pkl"),
 )
-
-SAM_BAND_LOW = 0.11
-SAM_BAND_HIGH = 0.32
 
 NUMERIC_FEATURES = {
     "Pre_EF": (35.0, 88.0),
-    "A2_mm": (3.5, 49.0),
-    "P2_mm": (0.0, 35.0),
-    "ratio_lam_lpm": (0.0, 3.75),
-    "SIV_Coapt_mm": (6.0, 51.5),
-    "angolo_ma": (65.0, 170.0),
-    "setto_basale": (0.0, 24.4),
-    "lv_edd": (18.0, 88.0),
+    "Lunghezza A2_mm": (3.5, 49.0),
+    "Lunghezza P2_mm": (0.0, 35.0),
+    "Rapporto LAM/LPM": (0.0, 3.75),
+    "Distanza SIV-Coapt_mm": (6.0, 51.5),
+    "Angolo M-A_gradi": (65.0, 170.0),
+    "Setto basale_mm": (0.0, 24.4),
+    "LV EDD": (18.0, 88.0),
     "Altezza_cm": (126.0, 217.0),
     "Peso_Kg": (12.0, 164.0),
     "BSA": (0.85, 2.85),
     "BMI": (10.0, 61.0),
-    "Eta": (0.0, 120.0),
+    "Età": (0.0, 120.0),
     "Pre_LVESV": (0.0, 160.0),
     "Mitrale_AP_mm": (12.0, 71.0),
     "mitrale_IC": (17.0, 83.0),
@@ -62,29 +58,10 @@ CATEGORICAL_FEATURES = {
     "Sesso": {"M", "F"},
 }
 
-NUMERIC_ALIASES = {
-    "Pre_EF": ("Pre_EF",),
-    "A2_mm": ("A2_mm", "lunghezza_a2", "A2"),
-    "P2_mm": ("P2_mm", "lunghezza_p2", "P2"),
-    "ratio_lam_lpm": ("ratio_lam_lpm", "rapporto_lam_lpm"),
-    "SIV_Coapt_mm": ("SIV_Coapt_mm", "SIV-Coapt_mm", "distanza_siv_coapt", "SIVC"),
-    "angolo_ma": ("angolo_ma", "Angolo"),
-    "setto_basale": ("setto_basale", "IVS"),
-    "lv_edd": ("lv_edd", "EDD"),
-    "Altezza_cm": ("Altezza_cm",),
-    "Peso_Kg": ("Peso_Kg",),
-    "BSA": ("BSA",),
-    "BMI": ("BMI",),
-    "Eta": ("Eta",),
-    "Pre_LVESV": ("Pre_LVESV",),
-    "Mitrale_AP_mm": ("Mitrale_AP_mm",),
-    "mitrale_IC": ("mitrale_IC",),
-}
-
 BOOLEAN_FEATURES = (
-    "Any_cleft",
-    "Any_leaflet_calcification",
-    "Any_annular_calcification",
+    "Any cleft",
+    "Any calcification leaflet",
+    "Any calcification anello",
 )
 
 REQUIRED_NUMERIC_FEATURES = tuple(NUMERIC_FEATURES.keys())
@@ -92,28 +69,23 @@ REQUIRED_CATEGORICAL_FEATURES = tuple(CATEGORICAL_FEATURES.keys())
 REQUIRED_BOOLEAN_FEATURES = BOOLEAN_FEATURES
 
 
-sam_model = joblib.load(SAM_PIPELINE_PATH)
-ring_model = joblib.load(RING_PIPELINE_PATH)
-SAM_FEATURE_COLUMNS = list(sam_model.feature_names_in_)
-RING_FEATURE_COLUMNS = list(ring_model.feature_names_in_)
+def _load_predictor(path: str):
+    with open(path, "rb") as file:
+        return cloudpickle.load(file)
 
 
-def _first_present(data: dict, *keys: str):
-    for key in keys:
-        value = data.get(key)
-        if value not in (None, ""):
-            return value
-    return None
+sam_predictor = _load_predictor(SAM_PREDICTOR_PATH)
+ring_predictor = _load_predictor(RING_PREDICTOR_PATH)
 
 
-def _read_optional_float(data: dict, *keys: str):
-    value = _first_present(data, *keys)
-    if value is None:
+def _read_optional_float(data: dict, key: str):
+    value = data.get(key)
+    if value in (None, ""):
         return None
 
     numeric_value = float(value)
     if not math.isfinite(numeric_value):
-        raise ValueError(f"{keys[0]} must be a finite number")
+        raise ValueError(f"{key} must be a finite number")
     return numeric_value
 
 
@@ -138,19 +110,19 @@ def _normalize_boolean(value):
 def _normalize_payload(data: dict) -> dict:
     payload = {}
 
-    for feature, aliases in NUMERIC_ALIASES.items():
-        value = _read_optional_float(data, *aliases)
+    for feature in REQUIRED_NUMERIC_FEATURES:
+        value = _read_optional_float(data, feature)
         if value is not None:
             _validate_numeric(feature, value)
             payload[feature] = value
 
-    if "ratio_lam_lpm" not in payload:
-        a2 = payload.get("A2_mm")
-        p2 = payload.get("P2_mm")
+    if "Rapporto LAM/LPM" not in payload:
+        a2 = payload.get("Lunghezza A2_mm")
+        p2 = payload.get("Lunghezza P2_mm")
         if a2 is not None and p2:
             ratio = a2 / p2
-            _validate_numeric("ratio_lam_lpm", ratio)
-            payload["ratio_lam_lpm"] = ratio
+            _validate_numeric("Rapporto LAM/LPM", ratio)
+            payload["Rapporto LAM/LPM"] = ratio
 
     for feature in REQUIRED_NUMERIC_FEATURES:
         if feature not in payload:
@@ -193,132 +165,53 @@ def _normalize_payload(data: dict) -> dict:
     return payload
 
 
-def _bool01(value):
-    if value in (True, 1, "1", "true", "True", "si", "sì", "yes"):
-        return 1
-    if value in (False, 0, "0", "false", "False", "no"):
-        return 0
-    return math.nan
+def _predict_sam(payload: dict) -> dict:
+    result = sam_predictor(payload)
+    probability = float(result["probability"])
 
-
-def _encode_etiology(value):
-    normalized = str(value).strip().lower()
-    if normalized in ("mix", "1", "myxomatous", "myxomatous disease"):
-        return 1
-    if normalized in ("fed", "0", "fibroelastic", "fibroelastic deficiency"):
-        return 0
-    return math.nan
-
-
-def _encode_sex(value):
-    normalized = str(value).strip().upper()
-    if normalized in ("M", "MALE", "0"):
-        return 0
-    if normalized in ("F", "FEMALE", "1"):
-        return 1
-    return math.nan
-
-
-def _build_feature_row(payload: dict) -> dict:
-    row = {
-        "Pre_EF": payload["Pre_EF"],
-        "Lunghezza A2_mm": payload["A2_mm"],
-        "Lunghezza P2_mm": payload["P2_mm"],
-        "Distanza SIV-Coapt_mm": payload["SIV_Coapt_mm"],
-        "Angolo M-A_gradi": payload["angolo_ma"],
-        "Setto basale_mm": payload["setto_basale"],
-        "LV EDD": payload["lv_edd"],
-        "Rapporto LAM/LPM": payload["ratio_lam_lpm"],
-        "Eziologia_MIX_FED": _encode_etiology(payload.get("Eziologia_MIX_FED")),
-        "Prolapse": 0,
-        "Flail": 0,
-        "Posterior leaflet": 0,
-        "Anterior leaflet": 0,
-        "Bileaflet": 0,
-        "Leaflet_type": -1,
-        "Any cleft": _bool01(payload.get("Any_cleft")),
-        "Any calcification leaflet": _bool01(
-            payload.get("Any_leaflet_calcification")
-        ),
-        "Any calcification anello": _bool01(
-            payload.get("Any_annular_calcification")
-        ),
-        "Altezza_cm": payload["Altezza_cm"],
-        "Peso_Kg": payload["Peso_Kg"],
-        "BSA": payload["BSA"],
-        "BMI": payload["BMI"],
-        "Età": payload["Eta"],
-        "Sesso": _encode_sex(payload.get("Sesso")),
-        "Pre_LVESV": payload["Pre_LVESV"],
-        "Mitrale_AP_mm": payload["Mitrale_AP_mm"],
-        "mitrale_IC": payload["mitrale_IC"],
+    return {
+        "probability": probability,
+        "risk_band": result["risk_band"],
+        "band_cutoffs": result.get("band_cutoffs"),
+        "threshold": result.get("threshold"),
+        "predicted_class": result.get("predicted_class"),
     }
 
-    lesion = payload.get("Prolapse")
-    normalized = lesion.strip().lower()
-    if normalized == "prolapse":
-        row["Prolapse"] = 1
-    elif normalized == "flail":
-        row["Flail"] = 1
 
-    leaflet = payload.get("Leaflet_involved")
-    normalized = str(leaflet).strip().lower()
-    if normalized.startswith("post"):
-        row["Posterior leaflet"] = 1
-        row["Leaflet_type"] = 0
-    elif normalized.startswith("ant"):
-        row["Anterior leaflet"] = 1
-        row["Leaflet_type"] = 1
-    elif normalized.startswith("bi"):
-        row["Bileaflet"] = 1
-        row["Leaflet_type"] = 2
+def _predict_ring(payload: dict) -> dict:
+    result = ring_predictor(payload)
+    predicted_mm = float(result["predicted_mm"])
+    plausible_range = result.get("interval_2mm")
 
-    scallops = payload.get("scallop_involved") or []
-    if isinstance(scallops, str):
-        scallops = [scallops]
-    scallops = {str(scallop).strip().upper() for scallop in scallops}
-    for scallop in ("A1", "A2", "A3", "P1", "P2", "P3"):
-        row[scallop] = 1 if scallop in scallops else 0
+    if plausible_range is None:
+        rounded_mm = round(predicted_mm)
+        plausible_range = [int(rounded_mm - 2), int(rounded_mm + 2)]
 
-    return row
-
-
-def _predict_sam(feature_row: dict) -> tuple[float, str]:
-    data = pd.DataFrame([feature_row]).reindex(columns=SAM_FEATURE_COLUMNS)
-    probability = float(sam_model.predict_proba(data)[0][1])
-    risk_band = (
-        "alto"
-        if probability >= SAM_BAND_HIGH
-        else "intermedio"
-        if probability >= SAM_BAND_LOW
-        else "basso"
-    )
-
-    return probability, risk_band
-
-
-def _predict_ring(feature_row: dict) -> tuple[float, list[int]]:
-    data = pd.DataFrame([feature_row]).reindex(columns=RING_FEATURE_COLUMNS)
-    predicted_mm = float(ring_model.predict(data)[0])
-    rounded_mm = round(predicted_mm)
-    plausible_range = [int(rounded_mm - 2), int(rounded_mm + 2)]
-    return round(predicted_mm, 1), plausible_range
+    return {
+        "predicted_mm": round(predicted_mm, 1),
+        "recommended_size": result.get("recommended_size"),
+        "plausible_range": plausible_range,
+        "prob_within_2mm": result.get("prob_within_2mm"),
+    }
 
 
 @app.post("/api/predict")
 async def predict(data: dict):
     try:
         payload = _normalize_payload(data)
-        feature_row = _build_feature_row(payload)
-        sam_probability, risk_band = _predict_sam(feature_row)
-        predicted_ring_mm, predicted_ring_plausible_range = _predict_ring(feature_row)
+        sam_result = _predict_sam(payload)
+        ring_result = _predict_ring(payload)
 
         return {
-            "sam_probability": round(sam_probability * 100, 2),
-            "risk_band": risk_band,
-            "band_cutoffs": [SAM_BAND_LOW, SAM_BAND_HIGH],
-            "predicted_ring_mm": predicted_ring_mm,
-            "predicted_ring_plausible_range": predicted_ring_plausible_range,
+            "sam_probability": round(sam_result["probability"] * 100, 2),
+            "risk_band": sam_result["risk_band"],
+            "band_cutoffs": sam_result["band_cutoffs"],
+            "sam_threshold": sam_result["threshold"],
+            "sam_predicted_class": sam_result["predicted_class"],
+            "predicted_ring_mm": ring_result["predicted_mm"],
+            "recommended_ring_size": ring_result["recommended_size"],
+            "predicted_ring_plausible_range": ring_result["plausible_range"],
+            "ring_prob_within_2mm": ring_result["prob_within_2mm"],
         }
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
