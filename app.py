@@ -45,7 +45,6 @@ NUMERIC_FEATURES = {
     "BSA": (0.85, 2.85),
     "BMI": (10.0, 61.0),
     "Età": (0.0, 120.0),
-    "Pre_LVESV": (0.0, 160.0),
     "Mitrale_AP_mm": (12.0, 71.0),
     "mitrale_IC": (17.0, 83.0),
 }
