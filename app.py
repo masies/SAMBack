@@ -221,8 +221,3 @@ async def predict(data: dict):
 @app.get("/api/status")
 async def status():
     return {"status": "alive"}
-
-
-@app.get("/")
-async def root():
-    return {"status": "alive", "service": "sam-back"}
